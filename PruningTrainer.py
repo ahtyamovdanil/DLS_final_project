@@ -125,10 +125,6 @@ class MyPruningTrainer(LightningModule):
         self.model = model
         self.pruner = Pruner(self.model)
 
-        for p in self.model.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-        
 
     def forward(
         self, src_batch: Tensor, trg_batch: Tensor, src_mask: Tensor, trg_mask: Tensor
@@ -156,11 +152,12 @@ class MyPruningTrainer(LightningModule):
         src_mask = self.model.make_src_mask(src, self.src_pad_idx)
         trg_mask = self.model.make_trg_mask(trg_input, self.trg_pad_idx)
 
+        pruning_loss = self.pruner()
+
         preds = self(src, trg_input, src_mask, trg_mask)
 
         model_loss = self.criterion(preds.view(-1, preds.size(-1)), targets)
-        pruning_loss = self.pruner()
-        total_loss = model_loss + 0.04 * pruning_loss
+        total_loss = model_loss + 2 * pruning_loss
 
         tensorboard_logs = {
             "total_train_loss": total_loss,
@@ -184,7 +181,7 @@ class MyPruningTrainer(LightningModule):
 
         model_loss = self.criterion(preds.view(-1, preds.size(-1)), targets)
         pruning_loss = self.pruner()
-        total_loss = model_loss + 0.04*pruning_loss
+        total_loss = model_loss + 2*pruning_loss
         
         return {
             "model_val_loss": model_loss,

@@ -5,7 +5,6 @@ import torch
 from typing import Union, List, Tuple
 import math
 from torch.autograd import Variable
-import numpy as np
 
 
 class PositionalEncoder(nn.Module):
@@ -19,9 +18,9 @@ class PositionalEncoder(nn.Module):
         for pos in range(max_seq_len):
             for i in range(d_model):
                 if i % 2:
-                    pe[pos, i] = math.sin(pos / (10000 ** ((2 * i) / d_model)))
+                    pe[pos, i] = math.sin(pos / (10000**((2 * i) / d_model)))
                 else:
-                    pe[pos, i] = math.cos(pos / (10000 ** ((2 * i) / d_model)))
+                    pe[pos, i] = math.cos(pos / (10000**((2 * i) / d_model)))
 
         pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
@@ -38,37 +37,17 @@ class PositionalEncoder(nn.Module):
         return self.dropout(x)
 
 
-def no_peeking_mask(size):
-    np_mask = np.triu(np.ones((1, size, size)), k=1).astype("uint8")
-    np_mask = Variable(torch.from_numpy(np_mask) == 0)
-    return np_mask
-
-
-# # masks for encoder / decoder
-# def create_masks(
-#     src: Tensor, trg: Tensor, src_pad_idx: int, trg_pad_idx: int,
-# ) -> Tuple[Tensor, Tensor]:
-
-#     device = src.get_device()
-#     src_mask = (src != src_pad_idx).unsqueeze(-2)
-#     if trg is not None:
-#         trg_mask = (trg != trg_pad_idx).unsqueeze(-2)
-#         size = trg.size(1)  # get seq_len for matrix
-#         np_mask = no_peeking_mask(size).to(device)
-#         trg_mask = trg_mask & np_mask
-#     else:
-#         trg_mask = None
-#     return src_mask, trg_mask
-
-
-class AttentionLayer(nn.Module):
+class PosAttentionLayer(nn.Module):
     def __init__(self, dropout: float) -> None:
         super().__init__()
         self.dropout = nn.Dropout(dropout)
 
-    def forward(
-        self, q: Tensor, k: Tensor, v: Tensor, d_k: int, mask: Tensor = None
-    ) -> Tensor:
+    def forward(self,
+                q: Tensor,
+                k: Tensor,
+                v: Tensor,
+                d_k: int,
+                mask: Tensor = None) -> Tensor:
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
         if mask is not None:
             mask = mask.unsqueeze(1)
@@ -92,7 +71,7 @@ class MultiHeadAttention(nn.Module):
         self.q_linear = nn.Linear(d_model, d_model)
         self.v_linear = nn.Linear(d_model, d_model)
         self.k_linear = nn.Linear(d_model, d_model)
-        self.attention = AttentionLayer(dropout)
+        self.attention = PosAttentionLayer(dropout)
         self.dropout = nn.Dropout(dropout)
         self.fc_out = nn.Linear(d_model, d_model)
 
@@ -104,7 +83,7 @@ class MultiHeadAttention(nn.Module):
         q = self.q_linear(q).view(bs, -1, self.n_heads, self.d_k)
         v = self.v_linear(v).view(bs, -1, self.n_heads, self.d_k)
 
-        # transpose to get dimensions bs * n_heads * sl * d_model
+        # transpose to get dimensions bs * n_heads * seq_len * d_model
         k = k.transpose(1, 2)
         q = q.transpose(1, 2)
         v = v.transpose(1, 2)
@@ -139,12 +118,8 @@ class Norm(nn.Module):
         self.eps = eps
 
     def forward(self, x):
-        norm = (
-            self.alpha
-            * (x - x.mean(dim=-1, keepdim=True))
-            / (x.std(dim=-1, keepdim=True) + self.eps)
-            + self.bias
-        )
+        norm = (self.alpha * (x - x.mean(dim=-1, keepdim=True)) /
+                (x.std(dim=-1, keepdim=True) + self.eps) + self.bias)
         return norm
 
 
@@ -209,8 +184,7 @@ class Encoder(nn.Module):
         self.pe = PositionalEncoder(d_model)
 
         self.layers = nn.ModuleList(
-            [EncoderLayer(d_model, n_heads, dropout) for _ in range(n_layers)]
-        )
+            [EncoderLayer(d_model, n_heads, dropout) for _ in range(n_layers)])
         self.norm = Norm(d_model)
 
     def forward(self, src: Tensor, mask: Tensor) -> Tensor:
@@ -235,13 +209,11 @@ class Decoder(nn.Module):
         self.embed = nn.Embedding(vocab_size, d_model)
         self.pe = PositionalEncoder(d_model)
         self.layers = nn.ModuleList(
-            [DecoderLayer(d_model, n_heads, dropout) for _ in range(n_layers)]
-        )
+            [DecoderLayer(d_model, n_heads, dropout) for _ in range(n_layers)])
         self.norm = Norm(d_model)
 
-    def forward(
-        self, trg: Tensor, e_outputs: Tensor, src_mask: Tensor, trg_mask: Tensor
-    ) -> Tensor:
+    def forward(self, trg: Tensor, e_outputs: Tensor, src_mask: Tensor,
+                trg_mask: Tensor) -> Tensor:
         x = self.embed(trg)
         x = self.pe(x)
         for i in range(self.n_layers):
@@ -251,30 +223,32 @@ class Decoder(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(
-        self,
-        src_vocab_size: int,
-        trg_vocab_size: int,
-        d_model: int,
-        n_enc_layers: int,
-        n_dec_layers: int,
-        n_heads: int,
-        enc_dropout: float,
-        dec_dropout: float
+            self, 
+            src_vocab_size: int, 
+            trg_vocab_size: int, 
+            d_model: int,
+            n_enc_layers: int, 
+            n_dec_layers: int, 
+            n_enc_heads: int, 
+            n_dec_heads: int,
+            enc_dropout: float, 
+            dec_dropout: float
         # device: Union[torch.device, str]
-    ):
+    ) -> None:
         super().__init__()
-        self.encoder = Encoder(
-            src_vocab_size, d_model, n_enc_layers, n_heads, enc_dropout
-        )
-        self.decoder = Decoder(
-            trg_vocab_size, d_model, n_dec_layers, n_heads, dec_dropout
-        )
+        self.n_enc_layers = n_enc_layers
+        self.n_dec_layers = n_dec_layers
+        self.n_enc_heads = n_enc_heads
+        self.n_dec_heads = n_dec_heads
+        self.encoder = Encoder(src_vocab_size, d_model, n_enc_layers, n_enc_heads,
+                               enc_dropout)
+        self.decoder = Decoder(trg_vocab_size, d_model, n_dec_layers, n_dec_heads,
+                               dec_dropout)
         self.out = nn.Linear(d_model, trg_vocab_size)
         # self.device = device
 
-    def forward(
-        self, src: Tensor, trg: Tensor, src_mask: Tensor, trg_mask: Tensor
-    ) -> Tensor:
+    def forward(self, src: Tensor, trg: Tensor, src_mask: Tensor,
+                trg_mask: Tensor) -> Tensor:
         e_outputs = self.encoder(src, src_mask)
         d_output = self.decoder(trg, e_outputs, src_mask, trg_mask)
         output = self.out(d_output)
@@ -295,12 +269,10 @@ class Transformer(nn.Module):
         trg_len = trg.size(1)
 
         trg_sub_mask = torch.tril(
-            torch.ones((1, trg_len, trg_len), device=trg.get_device())
-        ).bool()
+            torch.ones((1, trg_len, trg_len), device=trg.get_device())).bool()
         # trg_sub_mask = [trg len, trg len]
 
         trg_mask = trg_pad_mask & trg_sub_mask
         # trg_mask = [batch size, 1, trg len, trg len]
 
         return trg_mask
-
