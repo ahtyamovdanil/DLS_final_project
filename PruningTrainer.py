@@ -133,10 +133,11 @@ class MyPruningTrainer(LightningModule):
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
-        lr_scheduler = get_linear_schedule_with_warmup(
-            optimizer, num_warmup_steps=5, num_training_steps=100
-        )
-        return [optimizer], [lr_scheduler]
+        # lr_scheduler = get_linear_schedule_with_warmup(
+        #     optimizer, num_warmup_steps=5, num_training_steps=100
+        # )
+        return [optimizer]
+        #, [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
         src = batch.src
@@ -180,23 +181,23 @@ class MyPruningTrainer(LightningModule):
         preds = self(src, trg_input, src_mask, trg_mask)
 
         model_loss = self.criterion(preds.view(-1, preds.size(-1)), targets)
-        pruning_loss = self.pruner()
+        pruning_loss = self.pruner.get_total_sparsity_rate()
         total_loss = model_loss + 2*pruning_loss
-        
+
         return {
             "model_val_loss": model_loss,
-            "pruning_val_loss": pruning_loss,
+            "pruning_val_sparsity": pruning_loss,
             "total_val_loss": total_loss
             }
 
     def validation_epoch_end(self, outputs):
         avg_model_loss = torch.stack([x["model_val_loss"] for x in outputs]).mean()
-        avg_pruning_loss = torch.stack([x["pruning_val_loss"] for x in outputs]).mean()
+        avg_pruning_loss = sum([x["pruning_val_sparsity"] for x in outputs])/len(outputs)
         avg_total_loss = torch.stack([x["total_val_loss"] for x in outputs]).mean()
         tensorboard_logs = {
             "total_val_loss": avg_total_loss,
             "model_val_loss": avg_model_loss,
-            "pruning_val_loss": avg_pruning_loss
+            "pruning_val_sparsity": avg_pruning_loss
             }
         return {"model_loss": avg_model_loss, "log": tensorboard_logs}
 
