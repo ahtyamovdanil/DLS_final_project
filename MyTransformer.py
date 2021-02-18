@@ -209,7 +209,8 @@ class Decoder(nn.Module):
         self.embed = nn.Embedding(vocab_size, d_model)
         self.pe = PositionalEncoder(d_model)
         self.layers = nn.ModuleList(
-            [DecoderLayer(d_model, n_heads, dropout) for _ in range(n_layers)])
+            [DecoderLayer(d_model, n_heads, dropout) for _ in range(n_layers)]
+        )
         self.norm = Norm(d_model)
 
     def forward(self, trg: Tensor, e_outputs: Tensor, src_mask: Tensor,

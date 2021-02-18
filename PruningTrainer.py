@@ -154,6 +154,7 @@ class MyPruningTrainer(LightningModule):
         trg_mask = self.model.make_trg_mask(trg_input, self.trg_pad_idx)
 
         pruning_loss = self.pruner()
+        self.pruner
 
         preds = self(src, trg_input, src_mask, trg_mask)
 
